@@ -388,8 +388,8 @@ class MultiStepLR(_LRScheduler):
     Args:
         optimizer (Optimizer): Wrapped optimizer.
         milestones (list): List of epoch indices. Must be increasing.
-        gamma (float): Multiplicative factor of learning rate decay.
-            Default: 0.1.
+        gamma (float or list): Multiplicative factor of learning rate
+            decay. Default: 0.1.
         last_epoch (int): The index of last epoch. Default: -1.
         verbose (bool): If ``True``, prints a message to stdout for
             each update. Default: ``False``.
@@ -408,7 +408,13 @@ class MultiStepLR(_LRScheduler):
 
     def __init__(self, optimizer, milestones, gamma=0.1, last_epoch=-1, verbose=False):
         self.milestones = Counter(milestones)
-        self.gamma = gamma
+        if not isinstance(gamma, list) and not isinstance(gamma, tuple):
+            self.gamma = [gamma]*len(optimizer.param_groups)
+        else:
+            if len(gamma) != len(optimizer.param_groups):
+                raise ValueError("Expected {} gammas, but got {}".format(
+                    len(optimizer.param_groups), len(lr_lambda)))
+            self.gamma = list(gamma)
         super(MultiStepLR, self).__init__(optimizer, last_epoch, verbose)
 
     def get_lr(self):
@@ -418,13 +424,13 @@ class MultiStepLR(_LRScheduler):
 
         if self.last_epoch not in self.milestones:
             return [group['lr'] for group in self.optimizer.param_groups]
-        return [group['lr'] * self.gamma ** self.milestones[self.last_epoch]
-                for group in self.optimizer.param_groups]
+        return [group['lr'] * gamma ** self.milestones[self.last_epoch]
+                for group, gamma in zip(self.optimizer.param_groups, self.gamma)]
 
     def _get_closed_form_lr(self):
         milestones = list(sorted(self.milestones.elements()))
-        return [base_lr * self.gamma ** bisect_right(milestones, self.last_epoch)
-                for base_lr in self.base_lrs]
+        return [base_lr * gamma ** bisect_right(milestones, self.last_epoch)
+                for base_lr, gamma in zip(self.base_lrs, self.gamma)]
 
 
 class WarmUpLR(_LRScheduler):
